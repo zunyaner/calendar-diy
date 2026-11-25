@@ -1,0 +1,17 @@
+{
+  "name": "calendar-diy-android",
+  "version": "1.0.0",
+  "private": true,
+  "description": "我的日历 Android 壳（Capacitor）。网页版源码在仓库根目录。",
+  "scripts": {
+    "build:www": "bash scripts/build-www.sh",
+    "sync": "npm run build:www && npx cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.6.2",
+    "@capacitor/cli": "^8.6.2",
+    "@capacitor/core": "^8.6.2",
+    "@capacitor/filesystem": "^8.1.5",
+    "@capacitor/share": "^8.0.3"
+  }
+}

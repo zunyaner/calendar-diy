@@ -1072,16 +1072,22 @@
 
 
   /* ---------- native (Capacitor) file sharing ---------- */
+  /* Capacitor's injected bridge exposes nativePromise(plugin, method, options); we call the
+     Filesystem and Share plugins through it so no bundler is needed. */
+  function nativeCall(plugin, method, options) {
+    const C = window.Capacitor;
+    if (C && typeof C.nativePromise === "function") return C.nativePromise(plugin, method, options);
+    if (C && C.Plugins && C.Plugins[plugin]) return C.Plugins[plugin][method](options);
+    return Promise.reject(new Error("no native " + plugin));
+  }
   async function shareFileNative(name, text, mime) {
-    const P = window.Capacitor && window.Capacitor.Plugins;
-    if (!P || !P.Filesystem || !P.Share) { showToast("这个设备不能导出文件"); return false; }
     try {
       showToast("正在生成文件…");
-      const w = await P.Filesystem.writeFile({ path: name, data: text, directory: "CACHE", encoding: "utf8" });
-      await P.Share.share({ title: name, text: name, url: w.uri, dialogTitle: "保存或分享：" + name });
+      const w = await nativeCall("Filesystem", "writeFile", { path: name, data: text, directory: "CACHE", encoding: "utf8" });
+      await nativeCall("Share", "share", { title: name, text: name, url: w.uri, dialogTitle: "保存或分享：" + name });
       return true;
     } catch (e) {
-      if (e && /cancel/i.test(String(e.message || e))) return false;
+      if (e && /cancel/i.test(String((e && e.message) || e))) return false;
       showToast("导出失败：" + String((e && e.message) || e).slice(0, 40));
       return false;
     }
@@ -1090,7 +1096,7 @@
     try {
       const res = await fetch("./national-2027.ics");
       const text = await res.text();
-      await shareFileNative("国家节假日-2027.ics", text, "text/calendar");
+      await shareFileNative("national-holidays-2027.ics", text, "text/calendar");
     } catch (e) { showToast("读取节假日文件失败"); }
   }
 
@@ -1116,7 +1122,7 @@
     const json = JSON.stringify(payload);
     const name = "我的日历-备份-" + todayISO() + ".json";
     if (IS_NATIVE) {
-      if (await shareFileNative(name, json, "application/json")) {
+      if (await shareFileNative("my-calendar-backup-" + todayISO() + ".json", json, "application/json")) {
         showToast("已导出：" + items.length + " 条事项、" + photoList.length + " 张照片");
       }
       return;

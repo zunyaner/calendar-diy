@@ -1,0 +1,16 @@
+{
+  "appId": "io.github.zunyaner.calendardiy",
+  "appName": "我的日历",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false
+  },
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "SystemBars": {
+      "insetsHandling": "css"
+    }
+  }
+}

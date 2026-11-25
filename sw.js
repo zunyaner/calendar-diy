@@ -1,6 +1,6 @@
 /* 我的日历 service worker — static shell only, cache-first, relative URLs.
    User photos live in IndexedDB and are never fetched or cached here. */
-const CACHE = "cal2027-diy-v2";
+const CACHE = "cal2027-diy-v3";
 const ASSETS = [
   "./",
   "./index.html",
