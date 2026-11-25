@@ -11,6 +11,8 @@
   const FALLBACK_MIN_YM = "2026-11";
   const FALLBACK_MAX_YM = "2027-12";
   const SRC_LONG_EDGE = 1600;
+  const IS_NATIVE = !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === "function" && window.Capacitor.isNativePlatform());
+  const WHERE = IS_NATIVE ? "这台手机的应用里" : "这台手机的浏览器里";
   const CAM_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l1.6-2.2h6.8L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.6"/></svg>';
 
   const $app = document.getElementById("app");
@@ -401,7 +403,7 @@
     bd.innerHTML = `<div class="sheet" role="dialog" aria-modal="true">
       <div class="grab"></div>
       <h2>${ymLabel(ym)} 的照片</h2>
-      <div class="meta">照片只保存在这台手机的浏览器里，不会上传。</div>
+      <div class="meta">照片只保存在${WHERE}，不会上传。</div>
       <div class="menu-list">
         <button type="button" data-act="change">从相册换一张</button>
         <button type="button" data-act="adjust">调整位置和大小</button>
@@ -449,6 +451,54 @@
     const ok = await savePhoto(ym, src, crop);
     render();
     if (ok) showToast("已保存到这台手机");
+  }
+
+  /* ---------- batch add (pick many, fill empty months in order) ---------- */
+  function batchTargets() {
+    const r = rangeYM();
+    let start = currentMonthYM();
+    if (start < r.min || start > r.max) start = r.min;
+    const out = [];
+    for (let ym = start; ym <= r.max; ym = addMonth(ym, 1)) {
+      if (!photos[ym]) out.push(ym);
+    }
+    return out;
+  }
+  function pickBatch() {
+    const targets = batchTargets();
+    if (!targets.length) { showToast("从本月起的月份都已有照片，先删除或换图再批量添加"); return; }
+    const inp = document.getElementById("photo-files");
+    if (inp) inp.click();
+  }
+  function centerCrop(iw, ih) {
+    const w = maxCropW(iw, ih);
+    const h = (w * iw * 0.75) / ih;
+    return { x: (1 - w) / 2, y: Math.max(0, (1 - h) / 2), w: w };
+  }
+  async function onBatchChosen(ev) {
+    const files = Array.prototype.slice.call(ev.target.files || []);
+    ev.target.value = "";
+    if (!files.length) return;
+    const targets = batchTargets();
+    if (!targets.length) { showToast("从本月起的月份都已有照片"); return; }
+    const use = files.slice(0, targets.length);
+    const extra = files.length - use.length;
+    let done = 0, failed = 0;
+    for (let i = 0; i < use.length; i++) {
+      showToast("正在添加 " + (i + 1) + " / " + use.length + "…");
+      try {
+        const src = await fileToSrc(use[i]);
+        const img = await loadImage(src);
+        const crop = centerCrop(img.naturalWidth, img.naturalHeight);
+        if (await savePhoto(targets[i], src, crop)) done++; else failed++;
+      } catch (e) { failed++; }
+    }
+    render();
+    const first = targets[0], last = targets[Math.max(0, use.length - 1)];
+    let msg = "已添加 " + done + " 张（" + ymLabel(first) + (use.length > 1 ? " 起至 " + ymLabel(last) : "") + "）";
+    if (failed) msg += "，" + failed + " 张无法读取";
+    if (extra > 0) msg += "；多出的 " + extra + " 张没有位置，未使用";
+    showToast(msg);
   }
 
   /* ---------- cropper ---------- */
@@ -625,7 +675,7 @@
           </div>
         </section>
         ${thisMonthBlock(today)}
-        <div class="sec-title">全年总览</div>
+        <div class="sec-title"><span>全年总览</span><button type="button" id="btn-batch-year">批量添加照片</button></div>
         ${legendHtml({ today: true })}
         <div class="year-grid">${months}</div>
       </div>
@@ -633,6 +683,8 @@
     bindNav();
     bindQuoteCard();
     bindPhotoButtons();
+    const by = document.getElementById("btn-batch-year");
+    if (by) by.addEventListener("click", pickBatch);
   }
 
   function heroBlock() {
@@ -802,11 +854,12 @@
       <div class="page settings">
         <div class="block">
           <h3>我的照片</h3>
-          <p>首页大图和每个月的日历背景都由你自己选。点首页大图、月份卡片上的相机图标，就能从相册选照片、拖动缩放来裁剪。照片只保存在这台手机的浏览器里，不会上传。目前已添加 <strong>${photoCount()}</strong> 张。</p>
+          <p>首页大图和每个月的日历背景都由你自己选。点首页大图、月份卡片上的相机图标，就能从相册选照片、拖动缩放来裁剪。照片只保存在${WHERE}，不会上传。目前已添加 <strong>${photoCount()}</strong> 张。</p>
           <div class="actions">
+            <button class="btn-primary" type="button" id="btn-batch">批量添加照片</button>
             <button class="btn-danger" type="button" id="btn-clear-photos"${photoCount() ? "" : " disabled"}>清空全部图片</button>
           </div>
-          <p class="hint">${dbOk ? "" : "⚠️ 这个浏览器当前不能保存图片（可能是隐私模式），关闭后图片会消失。"}iPhone 的 Safari 可能在存储吃紧或长期不用时清理网站数据，建议每隔一段时间用下面的「导出备份」存一份。</p>
+          <p class="hint">${dbOk ? "" : "⚠️ 当前不能保存图片，关闭后图片会消失。"}${IS_NATIVE ? "照片和事项都保存在应用自己的存储里，卸载应用或清除应用数据会一并删除，换手机或卸载前请先「导出备份」。" : "iPhone 的 Safari 可能在存储吃紧或长期不用时清理网站数据，建议每隔一段时间用下面的「导出备份」存一份。"}</p>
         </div>
         <div class="block">
           <h3>备份与恢复</h3>
@@ -817,7 +870,13 @@
           </div>
           <input id="import-file" type="file" accept="application/json,.json" hidden>
         </div>
-        <div class="block">
+        ${IS_NATIVE ? `<div class="block">
+          <h3>节假日日历文件</h3>
+          <p>把国家法定节假日和调休上班日导出成 .ics 文件，可用系统日历或其他日历应用打开导入。</p>
+          <div class="actions">
+            <button class="btn-primary" type="button" id="btn-ics-share">导出节假日日历</button>
+          </div>
+        </div>` : `        <div class="block">
           <h3>订阅与下载</h3>
           <p>把国家法定节假日和调休上班日加到 iPhone 自带的「日历」里。系统通知比网页更稳。订阅日历在 iPhone 上<strong>可能不会弹出提醒</strong>，请以日历中的全天事件为准。</p>
           <div class="actions">
@@ -825,7 +884,7 @@
             <a class="btn-ghost" href="${escapeHtml(icsHttps)}" download="national-2027.ics">下载节假日日历</a>
           </div>
           <p class="hint">用 <strong>Safari</strong> 打开本页，点底部分享按钮，再选「添加到主屏幕」，就可以像 App 一样从桌面打开。安装后可离线查看日历。网页版不能在后台到点推送通知。</p>
-        </div>
+        </div>`}
         <div class="block">
           <h3>关于</h3>
           <p>这是你的个人日历「${APP_NAME}」。休班按国务院公布的国家法定节假日和调休安排标注，农历、节气来自公开历法数据。</p>
@@ -837,7 +896,10 @@
       </div>
     </div>`;
     bindNav();
+    document.getElementById("btn-batch").addEventListener("click", pickBatch);
     document.getElementById("btn-export").addEventListener("click", exportBackup);
+    const icsBtn = document.getElementById("btn-ics-share");
+    if (icsBtn) icsBtn.addEventListener("click", shareIcs);
     document.getElementById("btn-import").addEventListener("click", () => document.getElementById("import-file").click());
     document.getElementById("import-file").addEventListener("change", importBackup);
     document.getElementById("btn-clear-photos").addEventListener("click", async () => {
@@ -1009,6 +1071,29 @@
   }
 
 
+  /* ---------- native (Capacitor) file sharing ---------- */
+  async function shareFileNative(name, text, mime) {
+    const P = window.Capacitor && window.Capacitor.Plugins;
+    if (!P || !P.Filesystem || !P.Share) { showToast("这个设备不能导出文件"); return false; }
+    try {
+      showToast("正在生成文件…");
+      const w = await P.Filesystem.writeFile({ path: name, data: text, directory: "CACHE", encoding: "utf8" });
+      await P.Share.share({ title: name, text: name, url: w.uri, dialogTitle: "保存或分享：" + name });
+      return true;
+    } catch (e) {
+      if (e && /cancel/i.test(String(e.message || e))) return false;
+      showToast("导出失败：" + String((e && e.message) || e).slice(0, 40));
+      return false;
+    }
+  }
+  async function shareIcs() {
+    try {
+      const res = await fetch("./national-2027.ics");
+      const text = await res.text();
+      await shareFileNative("国家节假日-2027.ics", text, "text/calendar");
+    } catch (e) { showToast("读取节假日文件失败"); }
+  }
+
   /* ---------- backup ---------- */
   async function exportBackup() {
     let srcs = [];
@@ -1030,6 +1115,12 @@
     };
     const json = JSON.stringify(payload);
     const name = "我的日历-备份-" + todayISO() + ".json";
+    if (IS_NATIVE) {
+      if (await shareFileNative(name, json, "application/json")) {
+        showToast("已导出：" + items.length + " 条事项、" + photoList.length + " 张照片");
+      }
+      return;
+    }
     const file = new File([json], name, { type: "application/json" });
     try {
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -1113,7 +1204,7 @@
     el.textContent = msg;
     document.body.appendChild(el);
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => el.remove(), 2200);
+    toastTimer = setTimeout(() => el.remove(), msg.length > 22 ? 4200 : 2200);
   }
 
 
@@ -1133,9 +1224,17 @@
       inp.hidden = true;
       inp.addEventListener("change", onPhotoChosen);
       document.body.appendChild(inp);
+      const inp2 = document.createElement("input");
+      inp2.type = "file";
+      inp2.accept = "image/*";
+      inp2.multiple = true;
+      inp2.id = "photo-files";
+      inp2.hidden = true;
+      inp2.addEventListener("change", onBatchChosen);
+      document.body.appendChild(inp2);
       render();
       window.addEventListener("hashchange", render);
-      if ("serviceWorker" in navigator) {
+      if (!IS_NATIVE && "serviceWorker" in navigator) {
         navigator.serviceWorker.register("./sw.js").catch(() => {});
       }
     } catch (err) {
